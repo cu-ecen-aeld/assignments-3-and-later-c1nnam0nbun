@@ -1,4 +1,10 @@
 #include "systemcalls.h"
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 /**
  * @param cmd the command to execute with system()
@@ -16,7 +22,9 @@ bool do_system(const char *cmd)
  *   and return a boolean true if the system() call completed with success
  *   or false() if it returned a failure
 */
-
+    if (cmd == NULL) return false;
+    int code = system(cmd);
+    if (code <= 0 || code == 127) return false;
     return true;
 }
 
@@ -58,7 +66,19 @@ bool do_exec(int count, ...)
  *   as second argument to the execv() command.
  *
 */
-
+    pid_t pid = fork();
+    switch (pid) {
+    case -1: return false;
+    case 0:
+        int status;
+        waitpid(pid, &status, 0);
+    default:
+        char *arguments[count];
+        for (i = 0; i < count; i++) {
+            arguments[i] = command[i + 1];
+        }
+        if (execv(command[0], arguments) == -1) return false;
+    }
     va_end(args);
 
     return true;
@@ -92,6 +112,23 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *   The rest of the behaviour is same as do_exec()
  *
 */
+    int kidpid;
+    int fd = open(outputfile, O_WRONLY|O_TRUNC|O_CREAT, 0644);
+    if (fd < 0) return false;
+    switch (kidpid = fork()) {
+      case -1: close(fd); return false;
+      case 0:
+        close(fd);
+        int status;
+        waitpid(kidpid, &status, 0);
+      default:
+        close(fd);
+        char *arguments[count];
+        for (i = 0; i < count; i++) {
+            arguments[i] = command[i + 1];
+        }
+        if (execv(command[0], arguments) == -1) return false;
+    }
 
     va_end(args);
 
