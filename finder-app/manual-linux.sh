@@ -17,7 +17,7 @@ if [ $# -lt 1 ]
 then
 	echo "Using default directory ${OUTDIR} for output"
 else
-	OUTDIR=$1
+	OUTDIR=$(realpath $1)
 	echo "Using passed directory ${OUTDIR} for output"
 fi
 
@@ -34,7 +34,18 @@ if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
     echo "Checking out version ${KERNEL_VERSION}"
     git checkout ${KERNEL_VERSION}
 
-    # TODO: Add your kernel build steps here
+    sed -i -e 's/YYLTYPE yylloc/extern YYLTYPE yylloc/g' ${OUTDIR}/linux-stable/scripts/dtc/dtc-lexer.l
+
+    make ARCH=arm64 CROSS_COMPILE=${CROSS_COMPILE} mrproper
+    echo MRPROPER
+    make ARCH=arm64 CROSS_COMPILE=${CROSS_COMPILE} defconfig
+    echo DEFCONFIG
+    make -j4 ARCH=arm64 CROSS_COMPILE=${CROSS_COMPILE} all
+    echo ALL
+    make ARCH=arm64 CROSS_COMPILE=${CROSS_COMPILE} modules
+    echo MODULES
+    make ARCH=arm64 CROSS_COMPILE=${CROSS_COMPILE} dtbs
+    echo DTBS
 fi
 
 echo "Adding the Image in outdir"
@@ -47,7 +58,11 @@ then
     sudo rm  -rf ${OUTDIR}/rootfs
 fi
 
-# TODO: Create necessary base directories
+mkdir ${OUTDIR}/rootfs
+cd ${OUTDIR}/rootfs
+mkdir bin dev etc home lib proc sbin sys tmp usr var
+mkdir usr/bin usr/lib usr/sbin
+mkdir -p var/log
 
 cd "$OUTDIR"
 if [ ! -d "${OUTDIR}/busybox" ]
@@ -55,20 +70,30 @@ then
 git clone git://busybox.net/busybox.git
     cd busybox
     git checkout ${BUSYBOX_VERSION}
-    # TODO:  Configure busybox
 else
     cd busybox
 fi
 
-# TODO: Make and install busybox
+make distclean
+make CONFIG_PREFIX=${OUTDIR}/rootfs/bin defconfig
+sudo make ARCH=arm CROSS_COMPILE=arm-unknown-linux-gnueabi-install
 
 echo "Library dependencies"
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "program interpreter"
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
 
-# TODO: Add library dependencies to rootfs
+SYSROOT=$(arm-unknown-linux-gnueabi -print-sysroot)
 
-# TODO: Make device nodes
+cd ${OUTDIR}/rootfs
+cp -a $SYSROOT/lib/ld-linux-armhf.so.3 lib
+cp -a $SYSROOT/lib/ld-2.22.so lib
+cp -a $SYSROOT/lib/libc.so.6 lib
+cp -a $SYSROOT/lib/libc-2.22.so lib
+cp -a $SYSROOT/lib/libm.so.6 lib
+cp -a $SYSROOT/lib/libm-2.22.so lib
+
+sudo mknod -m 666 dev/null c 1 3
+sudo mknod -m 666 dev/console c 5 1
 
 # TODO: Clean and build the writer utility
 
@@ -78,3 +103,5 @@ ${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
 # TODO: Chown the root directory
 
 # TODO: Create initramfs.cpio.gz
+cpio -o ${OUTDIR}/rootfs initramfs
+gzip ${OUTDIR}initramfs
